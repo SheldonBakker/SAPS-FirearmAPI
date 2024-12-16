@@ -77,7 +77,6 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
     }
   `,
   customfavIcon: "https://i.ibb.co/Yfq9bxj/SAPSAPI.png",
-  customJs: "/custom.js",
   swaggerOptions: {
     persistAuthorization: true,
     filter: true,
