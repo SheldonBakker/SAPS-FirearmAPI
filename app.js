@@ -14,7 +14,7 @@ const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Firearm Data API',
+      title: 'SA Firearm API',
       version: '3.0.0',
       description: 'API for searching and retrieving South African firearm data',
       contact: {
@@ -33,7 +33,12 @@ const swaggerOptions = {
 };
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { customSiteTitle: "SA Firearm API" }));
+
+// Redirect root to API documentation
+app.get('/', (req, res) => {
+    res.redirect('/api-docs');
+});
 
 // Extract the scraping logic into a single function
 async function performScraping(data) {
