@@ -21,7 +21,7 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'SA Firearm API',
-      version: '3.0.0',
+      version: '3.2.2',
       description: 'API for searching and retrieving South African firearm data.',
       contact: {
         name: 'API Support',
@@ -113,7 +113,7 @@ const browserPool = genericPool.createPool({
 
 // Extract the scraping logic into a single function
 async function performScraping(data) {
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await browserPool.acquire();
     const page = await browser.newPage();
     
     try {
@@ -121,13 +121,13 @@ async function performScraping(data) {
         await page.setDefaultNavigationTimeout(30000);
         await page.setDefaultTimeout(30000);
         
-        // Disable unnecessary resources
+        // Improved request interception
         await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-                req.abort();
+        page.on('request', (request) => {
+            if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+                request.abort();
             } else {
-                req.continue();
+                request.continue().catch(() => {});
             }
         });
         
@@ -157,7 +157,7 @@ async function performScraping(data) {
         console.error('Scraping error:', error);
         throw new Error('Failed to fetch data');
     } finally {
-        await browser.close();
+        await browserPool.release(browser);
     }
 }
 
