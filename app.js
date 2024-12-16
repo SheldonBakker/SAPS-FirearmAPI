@@ -160,5 +160,4 @@ app.listen(PORT, () => {
 });
 
 app.post('/api/firearms/search', async (req, res) => {
-    // ... existing handler code ...
 });
