@@ -5,9 +5,15 @@ const cheerio = require('cheerio');
 const puppeteer = require('puppeteer');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
+const NodeCache = require('node-cache');
+const genericPool = require('generic-pool');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 
 const app = express();
 app.use(express.json()); // For parsing JSON request bodies
+app.use(compression());
 
 // Swagger definition
 const swaggerOptions = {
@@ -54,7 +60,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
     .swagger-ui .responses-table { background: #fff; }
     /* Logo styles */
     .swagger-ui .topbar-wrapper img {
-      content: url('https://remlic.co.za/logo.png');
+      content: url('https://i.ibb.co/Yfq9bxj/SAPSAPI.png');
       width: 150px;
       height: auto;
       margin-right: 10px;
@@ -62,7 +68,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
     /* Add logo before the title */
     .swagger-ui .info::before {
       content: '';
-      background: url('https://remlic.co.za/logo.png') no-repeat center;
+      background: url('https://i.ibb.co/Yfq9bxj/SAPSAPI.png') no-repeat center;
       background-size: contain;
       display: block;
       width: 200px;
@@ -70,7 +76,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
       margin-bottom: 20px;
     }
   `,
-  customfavIcon: "https://remlic.co.za/logo.png",
+  customfavIcon: "https://i.ibb.co/Yfq9bxj/SAPSAPI.png",
   customJs: "/custom.js",
   swaggerOptions: {
     persistAuthorization: true,
@@ -90,12 +96,42 @@ app.get('/', (req, res) => {
     res.redirect('/api-docs');
 });
 
+// Create a pool of browser instances
+const browserPool = genericPool.createPool({
+    create: async () => {
+        return await puppeteer.launch({ 
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+    },
+    destroy: async (browser) => {
+        await browser.close();
+    }
+}, {
+    min: 2, // Minimum browsers in pool
+    max: 10 // Maximum browsers in pool
+});
+
 // Extract the scraping logic into a single function
 async function performScraping(data) {
     const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
-
+    
     try {
+        // Set timeout for navigation
+        await page.setDefaultNavigationTimeout(30000);
+        await page.setDefaultTimeout(30000);
+        
+        // Disable unnecessary resources
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+                req.abort();
+            } else {
+                req.continue();
+            }
+        });
+        
         await page.goto(process.env.WEBSITE_URL, { waitUntil: 'networkidle2' });
 
         // Fill in the form fields based on the provided data
@@ -118,6 +154,9 @@ async function performScraping(data) {
         const result = $('#response-field').text().trim();
 
         return result;
+    } catch (error) {
+        console.error('Scraping error:', error);
+        throw new Error('Failed to fetch data');
     } finally {
         await browser.close();
     }
@@ -280,5 +319,115 @@ app.listen(PORT, () => {
     console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
 });
 
-app.post('/api/firearms/search', async (req, res) => {
+const cache = new NodeCache({ stdTTL: 3600 }); // Cache for 1 hour
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+});
+
+app.use('/api/', limiter);
+
+// Add this validation middleware before your route handler
+const validateFirearmSearch = [
+    body().custom((value, { req }) => {
+        const { fref, frid, fserial, fsref, fid, fiserial } = req.body;
+        
+        // Check if exactly one pair of parameters is provided
+        const pairs = [
+            !!(fref && frid),
+            !!(fserial && fsref),
+            !!(fid && fiserial)
+        ];
+        
+        if (pairs.filter(Boolean).length !== 1) {
+            throw new Error('Please provide exactly one valid pair of parameters');
+        }
+        
+        // Validate individual fields if present
+        if (fref) {
+            if (!/^[A-Za-z0-9]{6,}$/.test(fref)) {
+                throw new Error('Reference number must be at least 6 alphanumeric characters');
+            }
+        }
+        
+        if (frid) {
+            if (!/^\d{13}$/.test(frid)) {
+                throw new Error('ID number must be exactly 13 digits');
+            }
+        }
+        
+        if (fserial) {
+            if (!/^[A-Za-z0-9]{4,}$/.test(fserial)) {
+                throw new Error('Serial number must be at least 4 alphanumeric characters');
+            }
+        }
+        
+        if (fsref) {
+            if (!/^[A-Za-z0-9]{6,}$/.test(fsref)) {
+                throw new Error('Reference number must be at least 6 alphanumeric characters');
+            }
+        }
+        
+        if (fid) {
+            if (!/^\d{13}$/.test(fid)) {
+                throw new Error('ID number must be exactly 13 digits');
+            }
+        }
+        
+        if (fiserial) {
+            if (!/^[A-Za-z0-9]{4,}$/.test(fiserial)) {
+                throw new Error('Serial number must be at least 4 alphanumeric characters');
+            }
+        }
+        
+        return true;
+    }),
+    // Sanitize all inputs
+    body('*').trim().escape()
+];
+
+// Modify your route to use the validation
+app.post('/api/firearms/search', validateFirearmSearch, async (req, res) => {
+    try {
+        // Check for validation errors
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array(),
+                code: 'VALIDATION_ERROR'
+            });
+        }
+
+        // Create a cache key from the request parameters
+        const cacheKey = JSON.stringify(req.body);
+        
+        // Check cache first
+        const cachedResult = cache.get(cacheKey);
+        if (cachedResult) {
+            return res.json({
+                success: true,
+                result: cachedResult
+            });
+        }
+
+        // If not in cache, perform scraping
+        const result = await performScraping(req.body);
+        
+        // Store in cache
+        cache.set(cacheKey, result);
+        
+        res.json({
+            success: true,
+            result: result
+        });
+    } catch (error) {
+        console.error('API Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An unexpected error occurred while processing your request.',
+            code: 'INTERNAL_SERVER_ERROR'
+        });
+    }
 });
