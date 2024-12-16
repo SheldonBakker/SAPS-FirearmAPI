@@ -16,10 +16,10 @@ const swaggerOptions = {
     info: {
       title: 'SA Firearm API',
       version: '3.0.0',
-      description: 'API for searching and retrieving South African firearm data',
+      description: 'API for searching and retrieving South African firearm data.',
       contact: {
         name: 'API Support',
-        email: 'support@remlic.co.za'
+        email: 'support@remlic.co.za',
       },
     },
     servers: [
@@ -33,7 +33,57 @@ const swaggerOptions = {
 };
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { customSiteTitle: "SA Firearm API" }));
+
+// Enhanced SwaggerUI setup with custom options
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
+  customSiteTitle: "SA Firearm API Documentation",
+  customCss: `
+    .swagger-ui .topbar { display: none }
+    .swagger-ui .info .title { font-size: 36px; color: #2c3e50; }
+    .swagger-ui .info { margin: 20px 0; }
+    .swagger-ui .scheme-container { box-shadow: none; }
+    .swagger-ui .info .description { font-size: 16px; line-height: 1.6; }
+    .swagger-ui .opblock-tag { font-size: 24px; border-bottom: 2px solid #eee; }
+    .swagger-ui .opblock { margin: 0 0 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .swagger-ui .opblock .opblock-summary { padding: 15px; }
+    .swagger-ui .btn { border-radius: 4px; }
+    .swagger-ui select { border-radius: 4px; }
+    .swagger-ui .parameter__name { font-weight: 600; color: #2c3e50; }
+    .swagger-ui .parameter__type { color: #34495e; }
+    .swagger-ui table tbody tr td { padding: 10px; }
+    .swagger-ui .responses-table { background: #fff; }
+    /* Logo styles */
+    .swagger-ui .topbar-wrapper img {
+      content: url('https://remlic.co.za/logo.png');
+      width: 150px;
+      height: auto;
+      margin-right: 10px;
+    }
+    /* Add logo before the title */
+    .swagger-ui .info::before {
+      content: '';
+      background: url('https://remlic.co.za/logo.png') no-repeat center;
+      background-size: contain;
+      display: block;
+      width: 200px;
+      height: 60px;
+      margin-bottom: 20px;
+    }
+  `,
+  customfavIcon: "https://remlic.co.za/logo.png",
+  customJs: "/custom.js",
+  swaggerOptions: {
+    persistAuthorization: true,
+    filter: true,
+    displayRequestDuration: true,
+    docExpansion: 'list',
+    defaultModelsExpandDepth: 3,
+    defaultModelExpandDepth: 3,
+    tryItOutEnabled: true,
+    showExtensions: true,
+    showCommonExtensions: true
+  }
+}));
 
 // Redirect root to API documentation
 app.get('/', (req, res) => {
@@ -79,82 +129,148 @@ async function performScraping(data) {
  *   schemas:
  *     FirearmSearch:
  *       type: object
- *       description: Search parameters for firearm lookup
+ *       description: |
+ *         Search parameters for firearm lookup. There are three search options available:
+ *         1. Reference Number + ID/Institution Number
+ *         2. Serial Number + Reference Number
+ *         3. ID/Institution Number + Serial Number
+ *         You must provide exactly one pair of parameters.
  *       properties:
  *         fref:
  *           type: string
- *           description: Reference number of the firearm
+ *           description: Reference Number for Option 1
  *           example: "REF123456"
+ *           minLength: 1
  *         frid:
  *           type: string
- *           description: ID number associated with the firearm
- *           example: "ID789012"
+ *           description: ID/Institution Number for Option 1
+ *           example: "8001015009087"
+ *           minLength: 1
  *         fserial:
  *           type: string
- *           description: Serial number of the firearm
- *           example: "SER345678"
+ *           description: Serial Number for Option 2
+ *           example: "SN789012"
+ *           minLength: 1
  *         fsref:
  *           type: string
- *           description: Secondary reference number
- *           example: "SREF901234"
+ *           description: Reference Number for Option 2
+ *           example: "REF456789"
+ *           minLength: 1
  *         fid:
  *           type: string
- *           description: Unique firearm identifier
- *           example: "FID567890"
+ *           description: ID/Institution Number for Option 3
+ *           example: "8001015009087"
+ *           minLength: 1
  *         fiserial:
  *           type: string
- *           description: Internal serial number
- *           example: "ISER123456"
+ *           description: Serial Number for Option 3
+ *           example: "SN123456"
+ *           minLength: 1
+ *       oneOf:
+ *         - required: ['fref', 'frid']
+ *         - required: ['fserial', 'fsref']
+ *         - required: ['fid', 'fiserial']
+ *       examples:
+ *         option1:
+ *           value:
+ *             fref: "REF123456"
+ *             frid: "8001015009087"
+ *         option2:
+ *           value:
+ *             fserial: "SN789012"
+ *             fsref: "REF456789"
+ *         option3:
+ *           value:
+ *             fid: "8001015009087"
+ *             fiserial: "SN123456"
  *     SearchResponse:
  *       type: object
  *       properties:
  *         success:
  *           type: boolean
- *           description: Indicates if the search was successful
+ *           description: Indicates if the search operation was successful
+ *           example: true
  *         result:
  *           type: string
- *           description: The search result data
+ *           description: Detailed information about the firearm search result
+ *           example: "Firearm status: Valid license. Owner: John Doe. Type: Handgun."
  *     Error:
  *       type: object
  *       properties:
  *         error:
  *           type: string
- *           description: Error message
+ *           description: Detailed error message explaining what went wrong
+ *           example: "Invalid input parameters. Please provide either fref+frid, fserial+fsref, or fid+fiserial."
+ *         code:
+ *           type: string
+ *           description: Error code for programmatic handling
+ *           example: "INVALID_PARAMETERS"
  */
 
 /**
  * @swagger
+ * tags:
+ *   - name: Firearms
+ *     description: Operations related to firearm information lookup
+ * 
  * /api/firearms/search:
  *   post:
  *     tags:
  *       - Firearms
  *     summary: Search for firearm information
- *     description: Search for firearm details using various identification parameters
+ *     description: |
+ *       Search for firearm details using various identification parameters.
+ *       This endpoint allows three different search combinations:
+ *       1. Reference Number + ID/Institution Number
+ *       2. Serial Number + Reference Number
+ *       3. ID/Institution Number + Serial Number
+ *       
+ *       **Note:** Only one combination should be used per request.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/FirearmSearch'
+ *           examples:
+ *             searchByRefAndId:
+ *               summary: Search by Reference and ID
+ *               value:
+ *                 fref: "REF123456"
+ *                 frid: "8001015009087"
+ *             searchBySerialAndRef:
+ *               summary: Search by Serial and Reference
+ *               value:
+ *                 fserial: "SN789012"
+ *                 fsref: "REF456789"
  *     responses:
  *       200:
- *         description: Successful search
+ *         description: Successfully retrieved firearm information
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/SearchResponse'
+ *             example:
+ *               success: true
+ *               result: "Firearm status: Valid license. Owner: John Doe. Type: Handgun."
  *       400:
- *         description: Invalid input parameters
+ *         description: Invalid request parameters
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Invalid input parameters. Please provide either fref+frid, fserial+fsref, or fid+fiserial."
+ *               code: "INVALID_PARAMETERS"
  *       500:
- *         description: Server error
+ *         description: Internal server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "An unexpected error occurred while processing your request."
+ *               code: "INTERNAL_SERVER_ERROR"
  */
 
 // Start the server
