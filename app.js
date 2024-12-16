@@ -24,16 +24,16 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: `https://api.remlic.co.za`,
+        url: 'https://saps-firearmapi.onrender.com',
         description: 'Production server'
       },
     ],
   },
-  apis: ['./index.js'],
+  apis: [__dirname + '/app.js'],
 };
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // Extract the scraping logic into a single function
 async function performScraping(data) {
